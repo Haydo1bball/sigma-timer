@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://api.github.com; manifest-src 'self'; worker-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#F6F7F9">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sigma Timer">
+<title>Sigma Timer</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<main id="app">
+
+  <!-- Timer -->
+  <section id="view-timer" class="view">
+    <header class="top">
+      <h1>Focus</h1>
+      <div class="streak">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C0661A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 3 4 5 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-8z"/></svg>
+        <span id="streak-label">0 day streak</span>
+      </div>
+    </header>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <div class="segmented" role="group" aria-label="Session type">
+      <button type="button" data-type="homework" aria-pressed="true">Homework</button>
+      <button type="button" data-type="exam" aria-pressed="false">Exam Study</button>
+    </div>
+
+    <div class="field">
+      <span class="label" id="class-label">Class</span>
+      <div id="class-picker" class="class-picker" role="group" aria-labelledby="class-label"></div>
+    </div>
+
+    <div class="field">
+      <label class="label" for="note">Note (optional)</label>
+      <input id="note" type="text" maxlength="60" autocomplete="off" autocapitalize="sentences" placeholder="HW 7">
+    </div>
+
+    <div class="timer-area">
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 216 216" aria-hidden="true">
+          <circle class="ring-track" cx="108" cy="108" r="98"/>
+          <circle id="ring-progress" class="ring-progress" cx="108" cy="108" r="98" transform="rotate(-90 108 108)"/>
+        </svg>
+        <div class="ring-text">
+          <span id="time" class="time" role="timer">25:00</span>
+          <span id="phase-label" class="phase-label">Session 1 of 4</span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="btn-reset" class="round" type="button" aria-label="Reset timer">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+        </button>
+        <button id="btn-main" class="round main" type="button" aria-label="Start">
+          <svg class="icon-play" width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+          <svg class="icon-pause" width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>
+        </button>
+        <button id="btn-plus" class="round" type="button" aria-label="Add 5 minutes">+5</button>
+      </div>
+      <p id="hint" class="hint"></p>
+    </div>
+
+    <div class="goal">
+      <div class="goal-row">
+        <span class="muted">Daily goal</span>
+        <span id="goal-label" class="strong">0 of 8 sessions</span>
+      </div>
+      <div class="bar"><div id="goal-fill" class="bar-fill"></div></div>
+    </div>
+  </section>
+
+  <!-- Exams (phase two) -->
+  <section id="view-exams" class="view" hidden>
+    <header class="top"><h1>Exams</h1></header>
+    <div class="card empty">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>
+      <h2>Coming in phase two</h2>
+      <p class="muted">Exam dates, topics, and a Review today list based on the spacing research will live here.</p>
+    </div>
+  </section>
+
+  <!-- Stats -->
+  <section id="view-stats" class="view" hidden>
+    <header class="top"><h1>Stats</h1></header>
+
+    <div class="tiles">
+      <div class="tile"><span class="tile-value" id="stat-today">0 min</span><span class="tile-label">Today</span></div>
+      <div class="tile"><span class="tile-value" id="stat-week">0 min</span><span class="tile-label">This week</span></div>
+      <div class="tile"><span class="tile-value" id="stat-streak">0</span><span class="tile-label">Day streak</span></div>
+    </div>
+
+    <div class="card">
+      <div class="week-nav">
+        <button id="week-prev" class="icon-btn" type="button" aria-label="Previous week">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <span id="week-label" class="strong">This week</span>
+        <button id="week-next" class="icon-btn" type="button" aria-label="Next week">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+      <div id="day-bars" class="day-bars" role="img" aria-label="Minutes studied each day"></div>
+    </div>
+
+    <div class="card">
+      <h2>By class</h2>
+      <div class="legend">
+        <span class="legend-item"><span class="swatch solid"></span>Homework</span>
+        <span class="legend-item"><span class="swatch light"></span>Exam study</span>
+      </div>
+      <div id="class-bars" class="class-bars"></div>
+    </div>
+
+    <div class="card">
+      <h2>Recent sessions</h2>
+      <ul id="recent" class="recent"></ul>
+    </div>
+  </section>
+
+  <!-- Settings -->
+  <section id="view-settings" class="view" hidden>
+    <header class="top"><h1>Settings</h1></header>
+
+    <div class="card">
+      <h2>Timer</h2>
+      <div class="form-row"><label for="set-work">Study session (min)</label><input id="set-work" type="number" inputmode="numeric" min="1" max="180"></div>
+      <div class="form-row"><label for="set-short">Short break (min)</label><input id="set-short" type="number" inputmode="numeric" min="1" max="60"></div>
+      <div class="form-row"><label for="set-long">Long break (min)</label><input id="set-long" type="number" inputmode="numeric" min="1" max="120"></div>
+      <div class="form-row"><label for="set-cycle">Sessions before long break</label><input id="set-cycle" type="number" inputmode="numeric" min="2" max="12"></div>
+      <div class="form-row"><label for="set-goal">Daily goal (sessions)</label><input id="set-goal" type="number" inputmode="numeric" min="1" max="40"></div>
+      <div class="form-row"><label for="set-sound">Sound when time is up</label><input id="set-sound" type="checkbox" class="switch"></div>
+      <div class="form-row"><label for="set-awake">Keep screen on while running</label><input id="set-awake" type="checkbox" class="switch"></div>
+    </div>
+
+    <div class="card">
+      <h2>Classes</h2>
+      <ul id="class-list" class="class-list"></ul>
+      <button id="add-class" class="text-btn" type="button">Add class</button>
+    </div>
+
+    <div class="card">
+      <h2>Sync to GitHub</h2>
+      <p class="muted small">Your data is saved on this phone and backed up to a private repo you own. The token stays on this phone only.</p>
+      <div class="form-col"><label for="sync-owner">GitHub username</label><input id="sync-owner" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="39"></div>
+      <div class="form-col"><label for="sync-repo">Private data repo name</label><input id="sync-repo" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="100"></div>
+      <div class="form-col"><label for="sync-token">Token</label><input id="sync-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="255" placeholder="Paste once, it stays hidden"></div>
+      <div class="form-col"><label for="sync-expires">Token expiration date</label><input id="sync-expires" type="date"></div>
+      <div class="btn-row">
+        <button id="sync-connect" class="primary-btn" type="button">Connect</button>
+        <button id="sync-now" class="secondary-btn" type="button">Sync now</button>
+      </div>
+      <p id="sync-status" class="sync-status" role="status"></p>
+      <button id="sync-disconnect" class="text-btn danger" type="button">Disconnect and remove token</button>
+    </div>
+
+    <p class="muted small center">Sigma Timer, version 1.0</p>
+  </section>
+</main>
+
+<nav class="tabbar" aria-label="Main">
+  <button type="button" class="tab" data-tab="timer" aria-current="page">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/></svg>
+    <span>Timer</span>
+  </button>
+  <button type="button" class="tab" data-tab="exams">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>
+    <span>Exams</span>
+  </button>
+  <button type="button" class="tab" data-tab="stats">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
+    <span>Stats</span>
+  </button>
+  <button type="button" class="tab" data-tab="settings">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+    <span>Settings</span>
+    <span id="settings-dot" class="tab-dot" hidden></span>
+  </button>
+</nav>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
