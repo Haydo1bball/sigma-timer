@@ -1240,6 +1240,11 @@
   // Start up
   // ---------------------------------------------------------------------------
   function init() {
+    // Refuse to run inside another site's frame, so no page can trick taps on it.
+    if (window.top !== window.self) {
+      document.body.replaceChildren(el('p', 'muted center', 'Open Sigma Timer directly from its own address.'));
+      return;
+    }
     if (!classById(timer.classId) || classById(timer.classId).archived) {
       timer.classId = (activeClasses()[0] || {}).id || '';
     }
