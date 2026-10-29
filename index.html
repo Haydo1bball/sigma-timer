@@ -44,7 +44,7 @@
 
     <div class="field">
       <label class="label" for="note">Note (optional)</label>
-      <input id="note" type="text" maxlength="60" autocomplete="off" autocapitalize="sentences" placeholder="HW 7">
+      <input id="note" type="text" maxlength="60" autocomplete="off" autocapitalize="sentences" placeholder="-">
     </div>
 
     <div class="timer-area">
@@ -111,14 +111,18 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
+      <div class="legend">
+        <span class="legend-item"><span class="swatch hw"></span>Homework</span>
+        <span class="legend-item"><span class="swatch ex"></span>Exam study</span>
+      </div>
       <div id="day-bars" class="day-bars" role="img" aria-label="Minutes studied each day"></div>
     </div>
 
     <div class="card">
       <h2>By class</h2>
       <div class="legend">
-        <span class="legend-item"><span class="swatch solid"></span>Homework</span>
-        <span class="legend-item"><span class="swatch light"></span>Exam study</span>
+        <span class="legend-item"><span class="swatch hw"></span>Homework</span>
+        <span class="legend-item"><span class="swatch ex"></span>Exam study</span>
       </div>
       <div id="class-bars" class="class-bars"></div>
     </div>

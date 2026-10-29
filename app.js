@@ -892,19 +892,32 @@
     const bars = $('#day-bars');
     bars.replaceChildren();
     const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const perDay = dayNames.map((_, i) => sessionsOn(addDays(weekStart, i)).reduce((a, x) => a + x.minutes, 0));
-    const max = Math.max(60, ...perDay);
+    const perDay = dayNames.map((_, i) => {
+      const list = sessionsOn(addDays(weekStart, i));
+      const hw = list.filter((x) => x.type === 'homework').reduce((a, x) => a + x.minutes, 0);
+      const ex = list.filter((x) => x.type === 'exam').reduce((a, x) => a + x.minutes, 0);
+      return { hw, ex, total: hw + ex };
+    });
+    const max = Math.max(60, ...perDay.map((d) => d.total));
     const summary = [];
-    perDay.forEach((m, i) => {
+    perDay.forEach((d, i) => {
       const col = el('div', 'day-col');
       if (addDays(weekStart, i) === todayStart) col.classList.add('today');
-      const val = el('span', 'day-val', m > 0 ? String(Math.round(m)) : '');
+      const val = el('span', 'day-val', d.total > 0 ? String(Math.round(d.total)) : '');
       const bar = el('div', 'day-bar');
-      if (m <= 0) bar.classList.add('zero');
-      bar.style.height = `${Math.max(2, (m / max) * 100)}px`;
+      if (d.total <= 0) {
+        bar.classList.add('zero');
+      } else {
+        // Exam study stacks on top of homework.
+        const ex = el('div', 'seg-ex');
+        ex.style.height = `${(d.ex / max) * 100}px`;
+        const hw = el('div', 'seg-hw');
+        hw.style.height = `${(d.hw / max) * 100}px`;
+        bar.append(ex, hw);
+      }
       col.append(val, bar, el('span', 'day-name', dayNames[i]));
       bars.append(col);
-      summary.push(`${dayNames[i]} ${Math.round(m)} minutes`);
+      summary.push(`${dayNames[i]} ${Math.round(d.hw)} minutes homework and ${Math.round(d.ex)} minutes exam study`);
     });
     bars.setAttribute('aria-label', `Minutes studied each day. ${summary.join(', ')}`);
 

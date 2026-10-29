@@ -7,6 +7,8 @@
   --text-2: #3A3F48;
   --muted: #5F6570;
   --danger: #B42318;
+  --hw: #2F6FE0;         /* homework in charts */
+  --ex: #E0791F;         /* exam study in charts */
   --c: #2F6FE0;          /* active class color, set from JS */
   --c-soft: #EAF1FD;     /* tinted background for the active class */
   --tab-h: 64px;
@@ -282,15 +284,26 @@ input::placeholder { color: #8A909A; }
 }
 .day-col { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
 .day-val { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.day-bar { width: 100%; max-width: 30px; border-radius: 6px 6px 3px 3px; background: var(--text); min-height: 2px; }
-.day-bar.zero { background: var(--track); }
+.day-bar {
+  width: 100%;
+  max-width: 30px;
+  border-radius: 6px 6px 3px 3px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.day-bar.zero { background: var(--track); height: 2px; }
+.seg-hw { background: var(--hw); flex-shrink: 0; }
+.seg-ex { background: var(--ex); flex-shrink: 0; }
 .day-col.today .day-name { color: var(--text); font-weight: 700; }
 .day-name { font-size: 12px; color: var(--muted); }
 
 .legend { display: flex; gap: 16px; margin: -4px 0 14px 0; font-size: 12px; color: var(--muted); }
 .legend-item { display: flex; align-items: center; gap: 6px; }
-.swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--text-2); }
-.swatch.light { background: var(--text-2); opacity: 0.35; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; }
+.swatch.hw { background: var(--hw); }
+.swatch.ex { background: var(--ex); }
 
 .class-bars { display: flex; flex-direction: column; gap: 14px; }
 .cb-row { --cc: #5F6570; display: flex; flex-direction: column; gap: 6px; }
@@ -298,8 +311,8 @@ input::placeholder { color: #8A909A; }
 .cb-name { font-weight: 600; }
 .cb-total { color: var(--muted); font-variant-numeric: tabular-nums; }
 .cb-track { display: flex; height: 10px; border-radius: 5px; background: var(--track); overflow: hidden; }
-.cb-hw { background: var(--cc); height: 100%; }
-.cb-ex { background: var(--cc); opacity: 0.35; height: 100%; }
+.cb-hw { background: var(--hw); height: 100%; }
+.cb-ex { background: var(--ex); height: 100%; }
 .cb-split { font-size: 12px; color: var(--muted); }
 
 .recent { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
