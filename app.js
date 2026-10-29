@@ -181,6 +181,7 @@
         updatedAt: 0
       },
       sessions: [],
+      exams: [],
       deleted: []
     };
   }
@@ -228,7 +229,34 @@
           note: cleanStr(x.note, 60),
           start: clampNum(x.start, 0, 8.64e15, 0),
           minutes: Math.round(clampNum(x.minutes, 0, 1440, 0) * 100) / 100,
+          examId: ID.test(x.examId) ? x.examId : '',
+          topicId: ID.test(x.topicId) ? x.topicId : '',
           updatedAt: clampNum(x.updatedAt, 0, 8.64e15, 0)
+        }));
+    }
+
+    if (Array.isArray(input.exams)) {
+      out.exams = input.exams
+        .filter((e) => e && typeof e === 'object' && ID.test(e.id))
+        .slice(0, 300)
+        .map((e) => ({
+          id: e.id,
+          classId: ID.test(e.classId) ? e.classId : '',
+          name: cleanStr(e.name, 40).trim() || 'Exam',
+          date: typeof e.date === 'string' && DATE_ONLY.test(e.date) ? e.date : dayKey(now()),
+          topics: Array.isArray(e.topics)
+            ? e.topics
+              .filter((t) => t && typeof t === 'object' && ID.test(t.id))
+              .slice(0, 100)
+              .map((t) => ({
+                id: t.id,
+                name: cleanStr(t.name, 40).trim() || 'Topic',
+                reviews: Array.isArray(t.reviews)
+                  ? [...new Set(t.reviews.filter((r) => typeof r === 'string' && DATE_ONLY.test(r)))].sort().slice(-400)
+                  : []
+              }))
+            : [],
+          updatedAt: clampNum(e.updatedAt, 0, 8.64e15, 0)
         }));
     }
 
@@ -253,6 +281,14 @@
       if (!existing || s.updatedAt > existing.updatedAt) byId.set(s.id, s);
     }
     out.sessions = [...byId.values()].sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1));
+
+    const examsById = new Map();
+    for (const e of [...remote.exams, ...local.exams]) {
+      if (deleted.has(e.id)) continue;
+      const existing = examsById.get(e.id);
+      if (!existing || e.updatedAt > existing.updatedAt) examsById.set(e.id, e);
+    }
+    out.exams = [...examsById.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.id < b.id ? -1 : 1)));
     return out;
   }
 
@@ -277,6 +313,55 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Exams and spacing
+  // ---------------------------------------------------------------------------
+  // Based on Cepeda et al. (2008): the best gap between reviews was about
+  // 20 to 40 percent of the time left until the test, so each review schedules
+  // the next one at 30 percent of the days remaining (at least 1 day).
+  const SPACING = 0.3;
+
+  function parseDay(key) {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, m - 1, d).getTime();
+  }
+
+  function daysBetween(a, b) {
+    return Math.round((b - a) / 86400000);
+  }
+
+  function findExam(id) {
+    return id ? data.exams.find((e) => e.id === id) || null : null;
+  }
+
+  function findTopic(examId, topicId) {
+    const exam = findExam(examId);
+    if (!exam) return null;
+    const topic = exam.topics.find((t) => t.id === topicId);
+    return topic ? { exam, topic } : null;
+  }
+
+  function upcomingExams() {
+    const today = startOfDay(now());
+    return data.exams.filter((e) => parseDay(e.date) >= today);
+  }
+
+  function pastExams() {
+    const today = startOfDay(now());
+    return data.exams.filter((e) => parseDay(e.date) < today).reverse();
+  }
+
+  function topicSchedule(exam, topic) {
+    const today = startOfDay(now());
+    const examDay = parseDay(exam.date);
+    if (!topic.reviews.length) return { status: 'new', next: today, last: 0 };
+    const last = parseDay(topic.reviews[topic.reviews.length - 1]);
+    const gap = Math.max(1, Math.round(daysBetween(last, examDay) * SPACING));
+    const next = Math.min(addDays(last, gap), examDay);
+    if (last >= today) return { status: 'done', next: Math.max(next, addDays(today, 1)), last };
+    return { status: next <= today ? 'due' : 'later', next, last };
+  }
+
+  // ---------------------------------------------------------------------------
   // Timer
   // ---------------------------------------------------------------------------
   // phase: 'work' | 'short' | 'long'
@@ -297,7 +382,10 @@
       note: '',
       workStart: 0,
       lastId: '',
-      extendId: ''
+      extendId: '',
+      examId: '',
+      topicId: '',
+      lastReview: null
     };
   }
 
@@ -318,6 +406,12 @@
     t.workStart = clampNum(raw.workStart, 0, 8.64e15, 0);
     t.lastId = ID.test(raw.lastId) ? raw.lastId : '';
     t.extendId = ID.test(raw.extendId) ? raw.extendId : '';
+    t.examId = ID.test(raw.examId) ? raw.examId : '';
+    t.topicId = ID.test(raw.topicId) ? raw.topicId : '';
+    const lr = raw.lastReview;
+    t.lastReview = lr && typeof lr === 'object' && ID.test(lr.examId) && ID.test(lr.topicId) && DATE_ONLY.test(lr.day)
+      ? { examId: lr.examId, topicId: lr.topicId, day: lr.day, added: lr.added === true }
+      : null;
     if (t.running && !t.endAt) t.running = false;
     return t;
   }
@@ -381,8 +475,26 @@
           note: timer.note.trim(),
           start: timer.workStart || now() - timer.planned,
           minutes,
+          examId: '',
+          topicId: '',
           updatedAt: now()
         };
+        // An exam study session on a topic counts as a review of that topic.
+        const found = timer.type === 'exam' ? findTopic(timer.examId, timer.topicId) : null;
+        if (found && found.exam.classId === timer.classId) {
+          session.examId = found.exam.id;
+          session.topicId = found.topic.id;
+          const day = dayKey(now());
+          const added = !found.topic.reviews.includes(day);
+          if (added) {
+            found.topic.reviews.push(day);
+            found.topic.reviews.sort();
+            found.exam.updatedAt = now();
+          }
+          timer.lastReview = { examId: found.exam.id, topicId: found.topic.id, day, added };
+        } else {
+          timer.lastReview = null;
+        }
         data.sessions.push(session);
         timer.lastId = session.id;
         timer.done += 1;
@@ -418,6 +530,7 @@
     timer.lastId = '';
     timer.extendId = '';
     timer.workStart = 0;
+    timer.lastReview = null;
     saveTimer();
     if (autoStart) startTimer();
     else renderTimer();
@@ -736,6 +849,7 @@
     $('#time').textContent = fmtClock(left);
     const frac = timer.planned > 0 ? left / timer.planned : 0;
     $('#ring-progress').style.strokeDashoffset = String(RING_C * (1 - Math.min(1, Math.max(0, frac))));
+    $('#ring-progress').style.opacity = left > 0 ? '1' : '0';
   }
 
   function renderTimer() {
@@ -759,9 +873,15 @@
       btn.type = 'button';
       btn.setAttribute('aria-pressed', String(c.id === timer.classId));
       setColor(btn, '--cc', c.color);
+      btn.style.setProperty('--cs', tint(c.color, 0.9));
       btn.append(el('span', 'dash'), document.createTextNode(c.name));
       btn.addEventListener('click', () => {
         timer.classId = c.id;
+        const found = findTopic(timer.examId, timer.topicId);
+        if (!found || found.exam.classId !== c.id) {
+          timer.examId = '';
+          timer.topicId = '';
+        }
         saveTimer();
         renderTimer();
       });
@@ -770,6 +890,7 @@
 
     const note = $('#note');
     if (document.activeElement !== note) note.value = timer.note;
+    renderTopicPicker();
 
     // Labels
     const s = data.settings;
@@ -779,7 +900,7 @@
       if (timer.ended) {
         label = 'Session complete';
         const isLong = timer.done > 0 && timer.done % s.cycle === 0;
-        hint = `Nice work. Start your ${isLong ? `${s.long} min long` : `${s.short} min`} break, or add 5 minutes to finish up.`;
+        hint = `Nice work. Start your ${isLong ? `${s.long} min long` : `${s.short} min`} break, or add 5 minutes.`;
       } else if (timer.extendId) {
         label = 'Extra time';
         hint = 'Finishing up. This time is added to the session you just did.';
@@ -802,6 +923,7 @@
     }
     $('#phase-label').textContent = label;
     $('#hint').textContent = hint;
+    renderReviewNote();
 
     // Buttons
     const main = $('#btn-main');
@@ -970,7 +1092,11 @@
       const main = el('div', 'r-main');
       main.append(
         el('span', 'r-title', `${c ? c.name : 'Other'}, ${x.type === 'exam' ? 'Exam Study' : 'Homework'}`),
-        el('span', 'r-sub', x.note ? `${x.note}, ${when.format(x.start)}` : when.format(x.start))
+        el('span', 'r-sub', [
+          (findTopic(x.examId, x.topicId) || {}).topic ? findTopic(x.examId, x.topicId).topic.name : '',
+          x.note,
+          when.format(x.start)
+        ].filter(Boolean).join(', '))
       );
       const del = el('button', 'r-del');
       del.type = 'button';
@@ -1099,6 +1225,362 @@
   // ---------------------------------------------------------------------------
   // Navigation
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Rendering: topic picker and review note on the timer
+  // ---------------------------------------------------------------------------
+  function renderTopicPicker() {
+    const field = $('#topic-field');
+    field.hidden = timer.type !== 'exam';
+    $('#view-timer').classList.toggle('exam-mode', !field.hidden);
+    if (field.hidden) return;
+    const select = $('#topic');
+    if (document.activeElement === select) return;
+    select.replaceChildren();
+    const none = el('option', '', 'No topic');
+    none.value = '';
+    select.append(none);
+    const exams = upcomingExams().filter((e) => e.classId === timer.classId && e.topics.length);
+    const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+    for (const exam of exams) {
+      const group = document.createElement('optgroup');
+      group.label = `${exam.name}, ${fmt.format(parseDay(exam.date))}`;
+      for (const t of exam.topics) {
+        const opt = el('option', '', t.name);
+        opt.value = `${exam.id}|${t.id}`;
+        group.append(opt);
+      }
+      select.append(group);
+    }
+    const found = findTopic(timer.examId, timer.topicId);
+    select.value = found && found.exam.classId === timer.classId ? `${found.exam.id}|${found.topic.id}` : '';
+    $('#topic-help').hidden = exams.length > 0;
+  }
+
+  function renderReviewNote() {
+    const box = $('#review-note');
+    const lr = timer.lastReview;
+    const found = lr ? findTopic(lr.examId, lr.topicId) : null;
+    if (!found || !timer.ended || timer.phase !== 'work') {
+      box.hidden = true;
+      return;
+    }
+    const sched = topicSchedule(found.exam, found.topic);
+    const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+    const nextText = sched.next >= parseDay(found.exam.date) ? 'on exam day' : fmt.format(sched.next);
+    $('#review-text').textContent = lr.added
+      ? `${found.topic.name} reviewed. Next review ${nextText}.`
+      : `${found.topic.name} was already reviewed today. Next review ${nextText}.`;
+    $('#undo-review').hidden = !lr.added;
+    box.hidden = false;
+  }
+
+  function undoReview() {
+    const lr = timer.lastReview;
+    const found = lr ? findTopic(lr.examId, lr.topicId) : null;
+    if (found && lr.added) {
+      found.topic.reviews = found.topic.reviews.filter((d) => d !== lr.day);
+      found.exam.updatedAt = now();
+      const session = data.sessions.find((x) => x.id === timer.lastId);
+      if (session) {
+        session.examId = '';
+        session.topicId = '';
+        session.updatedAt = now();
+      }
+      saveData();
+      toast(`Review of ${found.topic.name} undone`);
+    }
+    timer.lastReview = null;
+    saveTimer();
+    renderAll();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rendering: exams tab
+  // ---------------------------------------------------------------------------
+  function relativeDays(ms) {
+    const d = daysBetween(ms, startOfDay(now()));
+    if (d <= 0) return 'today';
+    if (d === 1) return 'yesterday';
+    return `${d} days ago`;
+  }
+
+  function startTopic(exam, topic) {
+    timer.type = 'exam';
+    if (classById(exam.classId)) timer.classId = exam.classId;
+    timer.examId = exam.id;
+    timer.topicId = topic.id;
+    saveTimer();
+    showTab('timer');
+    renderTimer();
+    toast(timer.running ? `Topic set to ${topic.name}` : `Ready to study ${topic.name}. Tap play to start.`);
+  }
+
+  function renderExams() {
+    const today = startOfDay(now());
+    const upcoming = upcomingExams();
+
+    // Review today
+    const due = [];
+    const fresh = [];
+    for (const exam of upcoming) {
+      for (const topic of exam.topics) {
+        const sched = topicSchedule(exam, topic);
+        if (sched.status === 'due') due.push({ exam, topic, sched });
+        else if (sched.status === 'new') fresh.push({ exam, topic, sched });
+      }
+    }
+    due.sort((a, b) => a.sched.next - b.sched.next || (a.exam.date < b.exam.date ? -1 : 1));
+    const items = [...due, ...fresh];
+    $('#review-count').textContent = items.length ? `${items.length} topic${items.length === 1 ? '' : 's'}` : '';
+
+    const list = $('#review-list');
+    list.replaceChildren();
+    if (!items.length) {
+      list.append(el('li', 'empty-row', upcoming.length
+        ? 'All caught up. Nothing is due for review today.'
+        : 'Add an exam and its topics, and the topics to study each day will show up here.'));
+    }
+    for (const { exam, topic, sched } of items) {
+      const c = classById(exam.classId);
+      const li = el('li');
+      setColor(li, '--cc', c ? c.color : '#5F6570');
+      const main = el('div', 'r-main');
+      const status = sched.status === 'new' ? 'not started yet' : `last reviewed ${relativeDays(sched.last)}`;
+      main.append(
+        el('span', 'r-title', topic.name),
+        el('span', 'r-sub', `${c ? c.name : 'Other'} ${exam.name}, ${status}`)
+      );
+      const start = el('button', 'start-pill', 'Start');
+      start.type = 'button';
+      start.setAttribute('aria-label', `Start studying ${topic.name}`);
+      start.style.setProperty('--cs', tint(c ? c.color : '#5F6570', 0.88));
+      start.addEventListener('click', () => startTopic(exam, topic));
+      li.append(el('span', 'dash'), main, start);
+      list.append(li);
+    }
+
+    // Upcoming exams
+    const wrap = $('#exam-list');
+    wrap.replaceChildren();
+    if (!upcoming.length) {
+      const empty = el('div', 'card empty-small');
+      empty.append(el('p', 'muted', 'No upcoming exams yet. Tap Add exam to set one up with its date and topics.'));
+      wrap.append(empty);
+    }
+    const dateFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+    for (const exam of upcoming) {
+      const c = classById(exam.classId);
+      const card = el('button', 'exam-card');
+      card.type = 'button';
+      card.setAttribute('aria-label', `Edit ${c ? c.name : ''} ${exam.name}`);
+      setColor(card, '--cc', c ? c.color : '#5F6570');
+      const days = daysBetween(today, parseDay(exam.date));
+      const reviewed = exam.topics.filter((t) => t.reviews.length).length;
+
+      const top = el('div', 'exam-top');
+      const left = el('div', 'exam-left');
+      left.append(
+        el('span', 'exam-class', c ? c.name : 'Other'),
+        el('span', 'exam-name', exam.name),
+        el('span', 'exam-date', dateFmt.format(parseDay(exam.date)))
+      );
+      const right = el('div', 'exam-right');
+      if (days === 0) right.append(el('span', 'exam-days', 'Today'));
+      else {
+        right.append(el('span', 'exam-days', String(days)), el('span', 'exam-days-label', days === 1 ? 'day away' : 'days away'));
+      }
+      top.append(left, right);
+
+      const bar = el('div', 'bar');
+      const fill = el('div', 'bar-fill exam-fill');
+      fill.style.width = `${exam.topics.length ? (reviewed / exam.topics.length) * 100 : 0}%`;
+      bar.append(fill);
+      const caption = exam.topics.length
+        ? `${reviewed} of ${exam.topics.length} topics reviewed at least once`
+        : 'No topics yet. Tap to add some.';
+      card.append(top, bar, el('span', 'exam-caption', caption));
+      card.addEventListener('click', () => openEditor(exam.id));
+      wrap.append(card);
+    }
+
+    // Past exams
+    const past = pastExams();
+    $('#past-wrap').hidden = !past.length;
+    const pastList = $('#past-list');
+    pastList.replaceChildren();
+    const shortFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+    for (const exam of past) {
+      const c = classById(exam.classId);
+      const li = el('li');
+      setColor(li, '--cc', c ? c.color : '#5F6570');
+      const main = el('div', 'r-main');
+      main.append(
+        el('span', 'r-title', `${c ? c.name : 'Other'} ${exam.name}`),
+        el('span', 'r-sub', shortFmt.format(parseDay(exam.date)))
+      );
+      const edit = el('button', 'r-del');
+      edit.type = 'button';
+      edit.setAttribute('aria-label', `Edit or delete ${exam.name}`);
+      edit.append(svgIcon(18, ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z']));
+      edit.addEventListener('click', () => openEditor(exam.id));
+      li.append(el('span', 'dash'), main, edit);
+      pastList.append(li);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Exam editor
+  // ---------------------------------------------------------------------------
+  let editor = null;
+
+  function openEditor(examId) {
+    const exam = findExam(examId);
+    const classes = activeClasses();
+    editor = exam
+      ? {
+        id: exam.id,
+        classId: exam.classId,
+        name: exam.name,
+        date: exam.date,
+        topics: exam.topics.map((t) => ({ id: t.id, name: t.name, reviews: [...t.reviews] }))
+      }
+      : {
+        id: '',
+        classId: classById(timer.classId) && !classById(timer.classId).archived ? timer.classId : (classes[0] || {}).id || '',
+        name: '',
+        date: '',
+        topics: []
+      };
+    $('#editor-title').textContent = exam ? 'Edit exam' : 'New exam';
+    $('#editor-name').value = editor.name;
+    $('#editor-date').value = editor.date;
+    $('#editor-topic-new').value = '';
+    $('#editor-delete').hidden = !exam;
+    $('#editor-error').textContent = '';
+    renderEditor();
+    $('#exam-editor').hidden = false;
+    document.body.classList.add('sheet-open');
+    $('#editor-name').focus({ preventScroll: true });
+  }
+
+  function closeEditor() {
+    editor = null;
+    $('#exam-editor').hidden = true;
+    document.body.classList.remove('sheet-open');
+  }
+
+  function renderEditor() {
+    if (!editor) return;
+    const picker = $('#editor-class');
+    picker.replaceChildren();
+    const classes = data.settings.classes.filter((c) => !c.archived || c.id === editor.classId);
+    picker.style.gridTemplateColumns = `repeat(${Math.min(4, Math.max(1, classes.length))}, minmax(0, 1fr))`;
+    for (const c of classes) {
+      const btn = el('button', 'class-btn');
+      btn.type = 'button';
+      btn.setAttribute('aria-pressed', String(c.id === editor.classId));
+      setColor(btn, '--cc', c.color);
+      btn.style.setProperty('--cs', tint(c.color, 0.9));
+      btn.append(el('span', 'dash'), document.createTextNode(c.name));
+      btn.addEventListener('click', () => {
+        editor.classId = c.id;
+        renderEditor();
+      });
+      picker.append(btn);
+    }
+
+    const list = $('#editor-topics');
+    list.replaceChildren();
+    if (!editor.topics.length) list.append(el('li', 'empty-row', 'No topics yet. Add each chapter or unit the exam covers.'));
+    editor.topics.forEach((t, i) => {
+      const li = el('li');
+      const input = el('input');
+      input.type = 'text';
+      input.maxLength = 40;
+      input.value = t.name;
+      input.setAttribute('aria-label', `Topic ${i + 1}`);
+      input.addEventListener('input', () => { t.name = cleanStr(input.value, 40); });
+      const remove = el('button', 'remove');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', `Remove ${t.name || 'topic'}`);
+      remove.append(svgIcon(18, ['M18 6L6 18', 'M6 6l12 12']));
+      remove.addEventListener('click', () => {
+        if (t.reviews.length && !confirm(`Remove ${t.name}? Its review history goes with it.`)) return;
+        editor.topics.splice(i, 1);
+        renderEditor();
+      });
+      li.append(input, remove);
+      list.append(li);
+    });
+    $('#editor-topic-add').disabled = editor.topics.length >= 100;
+  }
+
+  function addEditorTopic() {
+    if (!editor) return;
+    const input = $('#editor-topic-new');
+    const names = cleanStr(input.value, 400).split(',').map((n) => n.trim().slice(0, 40)).filter(Boolean);
+    if (!names.length) { input.focus(); return; }
+    for (const name of names) {
+      if (editor.topics.length >= 100) break;
+      editor.topics.push({ id: `t${uid()}`, name, reviews: [] });
+    }
+    input.value = '';
+    renderEditor();
+    input.focus();
+  }
+
+  function saveEditor() {
+    if (!editor) return;
+    // Pick up a topic typed but not added yet.
+    if ($('#editor-topic-new').value.trim()) addEditorTopic();
+    const err = $('#editor-error');
+    if (!classById(editor.classId)) { err.textContent = 'Pick a class for this exam.'; return; }
+    if (!DATE_ONLY.test(editor.date)) { err.textContent = 'Pick the exam date.'; return; }
+    const name = cleanStr(editor.name, 40).trim() || 'Exam';
+    const topics = editor.topics
+      .map((t) => ({ id: t.id, name: cleanStr(t.name, 40).trim(), reviews: t.reviews }))
+      .filter((t) => t.name);
+
+    const existing = findExam(editor.id);
+    if (existing) {
+      existing.classId = editor.classId;
+      existing.name = name;
+      existing.date = editor.date;
+      existing.topics = topics;
+      existing.updatedAt = now();
+    } else {
+      data.exams.push({ id: `e${uid()}`, classId: editor.classId, name, date: editor.date, topics, updatedAt: now() });
+    }
+    data.exams.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    if (timer.examId && !findTopic(timer.examId, timer.topicId)) {
+      timer.examId = '';
+      timer.topicId = '';
+      saveTimer();
+    }
+    saveData();
+    closeEditor();
+    renderAll();
+    toast(existing ? 'Exam updated' : 'Exam added');
+  }
+
+  function deleteEditorExam() {
+    const exam = editor ? findExam(editor.id) : null;
+    if (!exam) return;
+    if (!confirm(`Delete ${exam.name}? Your study sessions stay in Stats.`)) return;
+    data.exams = data.exams.filter((e) => e.id !== exam.id);
+    if (!data.deleted.includes(exam.id)) data.deleted.push(exam.id);
+    if (timer.examId === exam.id) {
+      timer.examId = '';
+      timer.topicId = '';
+      saveTimer();
+    }
+    if (timer.lastReview && timer.lastReview.examId === exam.id) timer.lastReview = null;
+    saveData();
+    closeEditor();
+    renderAll();
+    toast('Exam deleted');
+  }
+
   let currentTab = 'timer';
 
   function showTab(name) {
@@ -1111,6 +1593,7 @@
       else b.removeAttribute('aria-current');
     });
     if (name === 'stats') renderStats();
+    if (name === 'exams') renderExams();
     if (name === 'settings') renderSettings();
     window.scrollTo(0, 0);
   }
@@ -1118,6 +1601,7 @@
   function renderAll() {
     renderTimer();
     if (currentTab === 'stats') renderStats();
+    if (currentTab === 'exams') renderExams();
     if (currentTab === 'settings') renderSettings();
   }
 
@@ -1145,6 +1629,29 @@
     $('#btn-main').addEventListener('click', onMain);
     $('#btn-reset').addEventListener('click', onReset);
     $('#btn-plus').addEventListener('click', addFive);
+
+    $('#topic').addEventListener('change', (e) => {
+      const [examId, topicId] = String(e.target.value).split('|');
+      const found = findTopic(examId, topicId);
+      timer.examId = found ? found.exam.id : '';
+      timer.topicId = found ? found.topic.id : '';
+      saveTimer();
+    });
+    $('#undo-review').addEventListener('click', undoReview);
+
+    $('#add-exam').addEventListener('click', () => openEditor(null));
+    $('#editor-cancel').addEventListener('click', closeEditor);
+    $('#editor-save').addEventListener('click', saveEditor);
+    $('#editor-delete').addEventListener('click', deleteEditorExam);
+    $('#editor-topic-add').addEventListener('click', addEditorTopic);
+    $('#editor-topic-new').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); addEditorTopic(); }
+    });
+    $('#editor-name').addEventListener('input', (e) => { editor.name = cleanStr(e.target.value, 40); });
+    $('#editor-date').addEventListener('change', (e) => { editor.date = DATE_ONLY.test(e.target.value) ? e.target.value : ''; });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && editor) closeEditor();
+    });
 
     $('#week-prev').addEventListener('click', () => { weekOffset -= 1; renderStats(); });
     $('#week-next').addEventListener('click', () => { if (weekOffset < 0) weekOffset += 1; renderStats(); });

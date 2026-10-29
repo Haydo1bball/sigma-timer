@@ -2,7 +2,7 @@
 
 // Caches the app's own files so it opens without a connection.
 // Requests to any other site (like GitHub) are never cached.
-const CACHE = 'sigma-timer-v4';
+const CACHE = 'sigma-timer-v5';
 const ASSETS = [
   './',
   'index.html',

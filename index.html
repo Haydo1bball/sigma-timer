@@ -14,8 +14,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=4">
-<script src="app.js?v=4" defer></script>
+<link rel="stylesheet" href="styles.css?v=5">
+<script src="app.js?v=5" defer></script>
 </head>
 <body>
 <main id="app">
@@ -40,6 +40,12 @@
     <div class="field">
       <span class="label" id="class-label">Class</span>
       <div id="class-picker" class="class-picker" role="group" aria-labelledby="class-label"></div>
+    </div>
+
+    <div class="field" id="topic-field" hidden>
+      <label class="label" for="topic">Topic</label>
+      <select id="topic"></select>
+      <p id="topic-help" class="muted small field-help" hidden>Add an exam for this class in the Exams tab to pick a topic.</p>
     </div>
 
     <div class="field">
@@ -70,6 +76,10 @@
         <button id="btn-plus" class="round" type="button" aria-label="Add 5 minutes">+5</button>
       </div>
       <p id="hint" class="hint"></p>
+      <div id="review-note" class="review-note" hidden>
+        <span id="review-text"></span>
+        <button id="undo-review" class="link-btn" type="button">Undo</button>
+      </div>
     </div>
 
     <div class="goal">
@@ -81,14 +91,35 @@
     </div>
   </section>
 
-  <!-- Exams (phase two) -->
+  <!-- Exams -->
   <section id="view-exams" class="view" hidden>
-    <header class="top"><h1>Exams</h1></header>
-    <div class="card empty">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>
-      <h2>Coming in phase two</h2>
-      <p class="muted">Exam dates, topics, and a Review today list based on the spacing research will live here.</p>
+    <header class="top">
+      <h1>Exams</h1>
+      <button id="add-exam" class="pill-btn" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Add exam
+      </button>
+    </header>
+
+    <div>
+      <div class="section-head">
+        <h2>Review today</h2>
+        <span id="review-count" class="muted small"></span>
+      </div>
+      <ul id="review-list" class="recent card list-card"></ul>
     </div>
+
+    <div>
+      <h2>Upcoming</h2>
+      <div id="exam-list" class="exam-list"></div>
+    </div>
+
+    <div id="past-wrap" hidden>
+      <h2>Past exams</h2>
+      <ul id="past-list" class="recent card list-card"></ul>
+    </div>
+
+    <p class="muted small">Each time you study a topic, the next review is set for about 30 percent of the days left before the exam, so reviews come closer together as the exam gets near.</p>
   </section>
 
   <!-- Stats -->
@@ -169,7 +200,7 @@
       <button id="sync-disconnect" class="text-btn danger" type="button">Disconnect and remove token</button>
     </div>
 
-    <p class="muted small center">Sigma Timer, version 1.1</p>
+    <p class="muted small center">Sigma Timer, version 1.2</p>
   </section>
 </main>
 
@@ -192,6 +223,37 @@
     <span id="settings-dot" class="tab-dot" hidden></span>
   </button>
 </nav>
+
+<div id="exam-editor" class="sheet" role="dialog" aria-modal="true" aria-labelledby="editor-title" hidden>
+  <div class="sheet-inner">
+    <header class="sheet-head">
+      <button id="editor-cancel" class="link-btn" type="button">Cancel</button>
+      <h2 id="editor-title">New exam</h2>
+      <button id="editor-save" class="link-btn strong" type="button">Save</button>
+    </header>
+
+    <div class="field">
+      <span class="label" id="editor-class-label">Class</span>
+      <div id="editor-class" class="class-picker" role="group" aria-labelledby="editor-class-label"></div>
+    </div>
+
+    <div class="form-col"><label for="editor-name">Exam name</label><input id="editor-name" type="text" maxlength="40" autocomplete="off" placeholder="Midterm"></div>
+    <div class="form-col"><label for="editor-date">Exam date</label><input id="editor-date" type="date"></div>
+
+    <div class="field editor-topics">
+      <span class="label">Topics</span>
+      <ul id="editor-topics" class="class-list"></ul>
+      <div class="add-row">
+        <input id="editor-topic-new" type="text" maxlength="400" autocomplete="off" placeholder="Chapter 5" aria-label="New topic">
+        <button id="editor-topic-add" class="secondary-btn" type="button">Add</button>
+      </div>
+      <p class="muted small field-help">Separate topics with commas to add several at once.</p>
+    </div>
+
+    <p id="editor-error" class="sync-status err" role="alert"></p>
+    <button id="editor-delete" class="text-btn danger" type="button" hidden>Delete exam</button>
+  </div>
+</div>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>
