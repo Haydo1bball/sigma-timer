@@ -1270,7 +1270,18 @@
     scheduleSync(1200);
 
     if ('serviceWorker' in navigator && location.protocol === 'https:') {
-      navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is optional */ });
+      // When an update installs, reload once so the new version shows right away.
+      const hadController = Boolean(navigator.serviceWorker.controller);
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || reloaded) return;
+        reloaded = true;
+        saveTimer();
+        location.reload();
+      });
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+        .then((reg) => reg.update())
+        .catch(() => { /* offline support is optional */ });
     }
   }
 

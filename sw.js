@@ -2,7 +2,7 @@
 
 // Caches the app's own files so it opens without a connection.
 // Requests to any other site (like GitHub) are never cached.
-const CACHE = 'sigma-timer-v3';
+const CACHE = 'sigma-timer-v4';
 const ASSETS = [
   './',
   'index.html',
@@ -35,8 +35,9 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   // Network first so updates show up right away, cache as the offline fallback.
+  // no-cache makes the phone check with GitHub for a newer copy every time.
   event.respondWith(
-    fetch(req)
+    fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
       .then((res) => {
         if (res.ok && res.type === 'basic') {
           const copy = res.clone();
